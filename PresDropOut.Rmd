@@ -1,0 +1,228 @@
+---
+title: "The Impact of Sexual Violence on School Dropout: Evidence from Educational Institutions in Ecuador"
+subtitle: "El impacto de la violencia sexual en el abandono escolar: Evidencia para para las instituciones educativas del Ecuador"
+author: "Cristian Carrión-Cauja, Juan Minchalo, Mariuxi Gualán, Tania Chapa, Kattya Guerrero"
+institute: "YRF"
+date: "2024-10-22"
+fontsize: 10pt
+output:
+ beamer_presentation:
+    template: C:/Users/cristiand.carrion/OneDrive - MINISTERIO DE EDUCACIÓN/Actividades_CCarrion/papers/1AbanonoViolencia/5Documentacion/Pres/manual_pres.tex
+    keep_tex: true
+# toc: true
+    slide_level: 3
+    fig_caption: true
+make149: true
+header-includes:
+  - \usepackage{caption}
+  - \usepackage{longtable}
+  #- \usepackage[spanish]{babel}
+---
+
+
+
+
+```{r setup, include=FALSE, cache=FALSE, eval=TRUE}
+#knitr::opts_chunk$set(echo = FALSE)
+
+library(dplyr)
+library(data.table)
+library(stringi)
+library(fixest)
+library(gtsummary)
+
+base_combinada_1 <- fread("C:/Users/cristiand.carrion/OneDrive - MINISTERIO DE EDUCACIÓN/Actividades_CCarrion/papers/1AbanonoViolencia/1LimpiezaData/panel_IE.csv")
+
+#Extraer el año lectivo del hecho de la víctima
+base_combinada_1 <- base_combinada_1 %>%
+  mutate(año_lectivo_ini = stringr::str_sub(Año_lectivo, 1, 9))
+
+#Función que extrae el primer año del componente de año lectivo
+
+base_combinada_1 <- base_combinada_1 %>%
+  mutate(
+    anio_lectivo_ini_4d = substr(año_lectivo_ini, 1, 4)
+  )
+
+base_combinada_1 <- base_combinada_1 %>%
+  mutate(
+    anio_lectivo_ini_4d = substr(año_lectivo_ini, 1, 4),
+    # Convertimos los años a valores numéricos restando 2008 para seguir el patrón (2009 = 1, 2010 = 2, ...)
+    anio_ini_valor = as.numeric(anio_lectivo_ini_4d) - 2008
+  )
+
+
+# Paso 4: Encontrar el primer año con un caso de violencia por institución
+base_combinada_1 <- base_combinada_1 %>%
+  group_by(AMIE) %>%  # Agrupar por institución
+  mutate(primer_anio_con_caso = min(anio_ini_valor[!is.na(NViolencia)], na.rm = TRUE)) %>%
+  ungroup()
+
+# Paso 5: Crear la variable dummie_evento que será 1 a partir del primer evento de violencia en adelante
+base_combinada_1 <- base_combinada_1 %>%
+  mutate(dummie_evento = ifelse(anio_ini_valor >= primer_anio_con_caso, 1, 0))
+
+base_combinada_1 <- base_combinada_1 %>%
+  group_by(AMIE) %>%  # Agrupar por institución
+  
+  # Paso 5: Crear la variable dummie_acumulado que suma 1 cuando aparece un caso de violencia
+  mutate(
+    dummie_acumulado = ifelse(!is.na(NViolencia), 1, 0),  # Coloca 1 donde hay casos
+    dummie_acumulado = cumsum(dummie_acumulado)  # Realiza la suma acumulada por institución
+  ) %>%
+  ungroup()
+
+base_combinada_1 = base_combinada_1 %>% 
+  mutate(anio_lectivo_ini_4d = as.numeric(anio_lectivo_ini_4d),
+         NViolencia = ifelse(is.na(NViolencia),0,NViolencia))
+
+cutpoint_value = 1
+
+test = base_combinada_1 %>%
+  group_by(anio_lectivo_ini_4d, AMIE) %>%
+  mutate(Abandono_NoPromovidos = Abandono+No.promovidos,
+         tasa_NoPromovidos = No.promovidos / Total_estudiantes,
+         tasa_abandono = Abandono / Total_estudiantes,
+         tasa_abandono_noPromovidos = (Abandono+No.promovidos) / Total_estudiantes) %>%
+  arrange(anio_lectivo_ini_4d, AMIE) %>%
+  group_by(AMIE) %>%
+  mutate(
+    ano_violencia = min(anio_lectivo_ini_4d[NViolencia > 0], na.rm = TRUE),
+    time = anio_lectivo_ini_4d - ano_violencia,
+    time_aux = ifelse(time == -Inf, anio_lectivo_ini_4d - 2018, time)
+  ) %>%
+  ungroup() %>%
+  # Creando la variable D
+  group_by(AMIE) %>%
+  mutate(
+    D = as.factor(ifelse(max(NViolencia > 0, na.rm = T) > 0, 1, 0)),
+    # Corrigiendo la creación de dummie_evento
+    dummie_evento = as.factor(ifelse(time_aux >= 0, 1, 0)),
+    anio_lectivo_ini_4d = as.factor(anio_lectivo_ini_4d),
+    n_registros = n()
+  ) %>% dplyr::select(anio_lectivo_ini_4d, AMIE, Abandono, D)
+
+
+```
+
+# Introducción
+
+- **Problema**: La violencia sexual afecta el bienestar físico y psicológico de las víctimas, y también impacta gravemente su trayectoria educativa.
+
+- **Impacto**: Las víctimas de violencia sexual tienen una mayor probabilidad de abandonar la escuela, perpetuando la pobreza y la desigualdad.
+
+- **Objetivo del estudio**: Analizar cómo la violencia sexual en instituciones educativas en Ecuador influye en el número de abandonos escolares.
+
+
+# Motivación
+
+- **Relevancia social**: La educación es clave para el desarrollo económico y social, pero la violencia sexual interrumpe esta oportunidad.
+
+- **Ciclos de pobreza**: El abandono escolar reduce las oportunidades laborales (Campolieti et al. 2010).
+
+- **Vacío en la literatura**: Pocos estudios han cuantificado el impacto específico de la violencia sexual en los índices de abandono escolar.
+
+**¿Por qué Ecuador?**
+
+- Data administrativa poco explorada
+
+# Datos
+
+```{r tabsum, eval=TRUE, echo=FALSE, tidy = TRUE, size="small", cache=TRUE, results="asis", warning=F}
+tab1 <- tbl_summary(test %>% ungroup() %>% dplyr::select(Abandono,D), 
+                               by = D, statistic = list(Abandono ~ "{mean} ({sd})")) %>% 
+  as_gt() %>%
+  gt::as_latex()
+
+```
+
+**Fuentes de datos**
+
+- REDEVI: Registro de Violencia Sexual en instituciones educativas (2014-2022).
+
+- AMIE: Archivo Maestro de Instituciones Educativas
+  
+\begin{table}[]
+\caption {Estadística descriptiva} \label{tab:title} 
+\begin{tabular}{lcc}
+\hline
+         &  No Reporta Violencia   & Reporta Violencia \\
+ & Mean (SD) & Mean (SD) \\ \hline
+Abandono       & 3   (15)        & 15   (34)      \\ \hline
+N Registros & 117,928 &     36,648 \\ \hline
+\end{tabular}
+\end{table}
+
+
+\begin{block}{}
+Registros administrativos del Ministerio de Educación 
+\end{block}
+
+# Metodología
+
+Regresión simple para medir el impacto de la violencia sexual en los abandonos escolares.
+
+$$y_i = \beta_0 + \beta_1D_i+ \epsilon_i$$
+Donde:
+
+- $y_{it}$: Número de abandonos en la institución $i$ para el tiempo $t$
+- $D_{it}$: Dummie que toma el valor 1 si la institución $i$ ha reportado casos de violencia sexual, y 0 si no ha reportado.
+- $\epsilon_{it}$: Término de error, que captura factores no observados
+
+# Resultados
+
+```{r tabreg, eval=TRUE, echo=FALSE, tidy = TRUE, size="small", cache=TRUE, results="asis", warning=F}
+
+n_instituciones = n_distinct(test$AMIE)
+n_instituciones = formatC(n_instituciones, format = "d", big.mark = ",")
+
+hline = "\\hline"
+modelnames = c("Abandono & OLS\\\\")
+
+mdl1 = lm(Abandono~factor(D)+factor(anio_lectivo_ini_4d), 
+             data = test)
+tab_reg = capture.output(stargazer::stargazer(mdl1, 
+                     style="ajps", header=FALSE,
+                   title="El impacto de la violencia sexual en el abandono escolar",
+                   omit=c("Constant"), model.names=F, dep.var.labels.include = F,
+                   label="tab:mdl1",
+                   font.size="small",
+                   notes = "Se incluyeron dummies de tiempo",
+                   digit.separator=",",
+                   omit.stat=c("aic","bic", "ll", "rsq")))
+
+tab_reg = tab_reg[c(-11:-26)]
+tab_reg = tab_reg[-9]
+tab_reg = tab_reg[-11:-13]
+tab_reg = c(tab_reg[a <- 1:9], hline, tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:10], "\\textit{Efectos Fijos} &  \\\\", tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:11], "\\~~ Tiempo & Si \\\\", tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:12], hline, tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:13], glue::glue("N Instituciones & {n_instituciones} \\\\"), tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:8], "Reporta Violencia & 12.181$^{***}$ \\\\", tab_reg[-a])
+tab_reg = c(tab_reg[a <- 1:7], modelnames, tab_reg[-a])
+cat(tab_reg, sep = "\n")
+
+```
+
+Las IE que experimentaron violencia tienen en promedio 12.18 más abandonos que las instituciones sin violencia sexual, ceteris paribus.
+
+
+
+# Conclusiones
+
+* La violencia sexual en las IE incrementa el número de abandonos.
+* Limitaciones: Sesgo de selección (no se reportan todos los casos).
+* Futuras investigaciones: 
+  + Incluir variables adicionales (tamaño de la escuela, contexto socioeconómico) para robustez.
+  + Implementar metodologías más sofisticadas (Diff-Diff)
+  
+  
+![](C:/Users/cristiand.carrion/OneDrive - MINISTERIO DE EDUCACIÓN/Actividades_CCarrion/papers/1AbanonoViolencia/5Documentacion/Img/plot1.png){width="60%"}
+
+# Bibliografía
+
+Campolieti, M., Fang, T., & Gunderson, M. (2010). Labour market outcomes and skill acquisition of high school dropouts. *Journal of Labor Research, 31(1)*, 39–52. doi:10.1007/s121
+
+
+
