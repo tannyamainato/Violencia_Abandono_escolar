@@ -1,7 +1,7 @@
 ---
 title: "The Impact of Sexual Violence on School Dropout: Evidence from Educational Institutions in Ecuador"
-subtitle: "El impacto de la violencia sexual en el abandono escolar: Evidencia para para las instituciones educativas del Ecuador"
-author: "Cristian Carrión-Cauja, Juan Minchalo, Mariuxi Gualán, Tania Chapa, Kattya Guerrero"
+subtitle: "El impacto de la violencia sexual en el abandono escolar: Evidencia para las instituciones educativas del Ecuador"
+author: "Cristian Carrión-Cauja, Juan Minchalo, Mariuxi Gualán, Tania Chapa, Kattya Guerrero, Tannya Mainato"
 institute: "YRF"
 date: "2024-10-22"
 fontsize: 10pt
